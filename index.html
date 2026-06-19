@@ -1,0 +1,1785 @@
+<!--
+  Team Balancer
+  A single-file, zero-install, client-side web tool to split player
+  rosters into fair, balanced teams using simulated annealing. Set
+  custom player constraints, avoid past teammates, and effortlessly
+  optimize groups with support for CSV import/export.
+
+  SPDX-License-Identifier: MIT
+
+  MIT License
+
+  Copyright (c) 2026 Daniel Joseph Sapit
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in
+  all copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+  THE SOFTWARE.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Team Balancer splits a player roster into fair, score-balanced teams. Import a CSV, set together/apart constraints, and let a simulated-annealing optimizer do the rest — all client-side, no install required.">
+    <meta name="application-name" content="Team Balancer">
+    <meta name="theme-color" content="#2563eb">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='46' fill='%232563eb'/%3E%3Ctext x='50' y='66' font-size='54' text-anchor='middle' fill='white' font-family='Arial,sans-serif'%3ETB%3C/text%3E%3C/svg%3E">
+    <title>Team Balancer</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-lt: #eff6ff;
+            --success: #16a34a;
+            --danger: #ef4444;
+            --bg: #f8fafc;
+            --card: #ffffff;
+            --border: #e2e8f0;
+            --text: #1e293b;
+            --muted: #64748b;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.5;
+            padding: 10px 20px;
+        }
+
+        .container { max-width: 1440px; margin: 0 auto; }
+
+        /* ── Header / footer ── */
+        .app-header { padding: 6px 2px 14px; }
+        .app-header h1 { font-size: 1.3rem; font-weight: 700; }
+        .app-tagline { font-size: 0.85rem; color: var(--muted); margin-top: 3px; }
+
+        .app-footer {
+            margin: 28px 2px 14px;
+            padding-top: 12px;
+            border-top: 1px solid var(--border);
+            font-size: 0.75rem;
+            color: var(--muted);
+            text-align: center;
+        }
+        .app-footer a { color: var(--primary); text-decoration: none; }
+        .app-footer a:hover { text-decoration: underline; }
+
+        /* ── Layout ── */
+        .page-layout {
+            display: grid;
+            grid-template-columns: 370px 1fr;
+            gap: 20px;
+            align-items: start;
+        }
+
+        .setup-area {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        @media (max-width: 880px) {
+            .page-layout { grid-template-columns: 1fr; }
+        }
+
+        /* ── Cards ── */
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 14px 16px;
+            box-shadow: 0 1px 3px rgba(0,0,0,.06);
+        }
+
+        .card-title {
+            font-size: 0.72rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: .07em;
+            color: var(--muted);
+            margin-bottom: 10px;
+        }
+
+        /* ── Player roster ── */
+        .roster-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            gap: 6px;
+        }
+
+        .roster-count {
+            font-size: 0.75rem;
+            color: #94a3b8;
+            font-weight: 400;
+        }
+
+        .roster-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+        .player-table-wrap {
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            overflow: hidden;
+            margin-bottom: 8px;
+        }
+
+        .player-scroll { max-height: 230px; overflow-y: auto; }
+
+        .player-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.8rem;
+        }
+
+        .player-table thead th {
+            background: #f8fafc;
+            padding: 5px 7px;
+            font-size: 0.67rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: .04em;
+            color: var(--muted);
+            border-bottom: 1px solid var(--border);
+            position: sticky;
+            top: 0;
+            z-index: 2;
+        }
+
+        .player-table tbody tr:not(:last-child) td { border-bottom: 1px solid #f1f5f9; }
+
+        .player-table td { padding: 2px 3px; }
+        .player-table td.del-col { width: 26px; text-align: center; }
+
+        .p-inp {
+            width: 100%;
+            border: none;
+            background: transparent;
+            padding: 4px 5px;
+            font-size: 0.8rem;
+            font-family: inherit;
+            color: var(--text);
+            outline: none;
+            border-radius: 3px;
+            min-width: 0;
+        }
+        .p-inp:focus { background: var(--primary-lt); outline: 1px solid var(--primary); }
+        .p-inp.score-inp { width: 52px; }
+
+        .row-del {
+            background: none;
+            border: none;
+            color: #cbd5e1;
+            cursor: pointer;
+            padding: 3px 5px;
+            border-radius: 3px;
+            font-size: 1rem;
+            line-height: 1;
+            transition: color .12s, background .12s;
+        }
+        .row-del:hover { color: var(--danger); background: #fef2f2; }
+
+        .roster-empty {
+            padding: 22px 16px;
+            text-align: center;
+            color: #94a3b8;
+            font-size: 0.82rem;
+            font-style: italic;
+        }
+
+        /* ── Import bar ── */
+        .import-bar { display: flex; gap: 7px; align-items: stretch; }
+
+        .drop-zone {
+            flex: 1;
+            border: 1.5px dashed var(--border);
+            border-radius: 6px;
+            padding: 7px 10px;
+            font-size: 0.78rem;
+            color: var(--muted);
+            cursor: pointer;
+            text-align: center;
+            background: #f8fafc;
+            transition: all .15s;
+            user-select: none;
+        }
+        .drop-zone:hover, .drop-zone.dragover {
+            border-color: var(--primary);
+            background: var(--primary-lt);
+            color: var(--primary);
+        }
+
+        /* ── Config inputs ── */
+        .field-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        .field-row:last-child { margin-bottom: 0; }
+
+        .field-label {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 0.83rem;
+            font-weight: 600;
+            flex: 1;
+            white-space: nowrap;
+        }
+
+        .field-ctrl { flex-shrink: 0; }
+        .field-ctrl select,
+        .field-ctrl input[type="number"] {
+            width: 110px;
+            padding: 5px 8px;
+            border: 1px solid var(--border);
+            border-radius: 5px;
+            font-size: 0.83rem;
+            font-family: inherit;
+            background: white;
+        }
+        .field-ctrl select:focus,
+        .field-ctrl input:focus {
+            outline: 2px solid var(--primary);
+            outline-offset: -1px;
+        }
+
+        /* ── Weight sliders ── */
+        .weight-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+        .weight-row:last-child { margin-bottom: 0; }
+
+        .weight-label {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 0.83rem;
+            font-weight: 600;
+            flex: 1;
+        }
+
+        .slider-group {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-shrink: 0;
+        }
+
+        input[type="range"] {
+            -webkit-appearance: none;
+            width: 90px;
+            height: 4px;
+            border-radius: 2px;
+            background: linear-gradient(to right, var(--primary) 0%, var(--primary) 50%, #e2e8f0 50%, #e2e8f0 100%);
+            outline: none;
+            cursor: pointer;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: var(--primary);
+            border: 2px solid white;
+            box-shadow: 0 1px 3px rgba(0,0,0,.25);
+            cursor: pointer;
+        }
+        input[type="range"]::-moz-range-thumb {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: var(--primary);
+            border: 2px solid white;
+            box-shadow: 0 1px 3px rgba(0,0,0,.25);
+            cursor: pointer;
+        }
+
+        .w-val {
+            width: 18px;
+            text-align: right;
+            font-size: 0.8rem;
+            font-variant-numeric: tabular-nums;
+            font-weight: 700;
+            color: var(--primary);
+        }
+        .w-val.off { color: #cbd5e1; }
+
+        .divider { height: 1px; background: var(--border); margin: 10px 0; }
+
+        /* ── Constraints ── */
+        .constraint-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+
+        .constraint-row {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            margin-bottom: 5px;
+            font-size: 0.78rem;
+        }
+
+        .constraint-row select {
+            flex: 1;
+            min-width: 0;
+            padding: 4px 5px;
+            border: 1px solid var(--border);
+            border-radius: 5px;
+            font-size: 0.77rem;
+            font-family: inherit;
+            background: white;
+            cursor: pointer;
+        }
+        .constraint-row select.type-sel {
+            flex: 0 0 86px;
+            color: var(--text);
+            font-weight: 600;
+        }
+        .constraint-row select.type-sel option[value="together"] { color: var(--success); }
+        .constraint-row select.type-sel option[value="apart"]    { color: var(--danger); }
+
+        .constraint-empty {
+            font-size: 0.8rem;
+            color: #94a3b8;
+            font-style: italic;
+            padding: 2px 0 4px;
+        }
+
+        /* ── Info tooltip (rendered into <body> via JS to escape overflow clipping) ── */
+        .tip {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 13px;
+            height: 13px;
+            border-radius: 50%;
+            background: #94a3b8;
+            color: white;
+            font-size: 0.58rem;
+            font-weight: 700;
+            cursor: default;
+            flex-shrink: 0;
+            user-select: none;
+        }
+
+        #tip-box {
+            position: fixed;
+            background: #1e293b;
+            color: #f8fafc;
+            font-size: 0.71rem;
+            font-weight: 400;
+            padding: 5px 9px;
+            border-radius: 5px;
+            white-space: pre-line;
+            max-width: 230px;
+            line-height: 1.45;
+            pointer-events: none;
+            z-index: 9998;
+            display: none;
+            box-shadow: 0 3px 10px rgba(0,0,0,.25);
+        }
+
+        /* ── Buttons ── */
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 10px 16px;
+            border-radius: 7px;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 0.9rem;
+            width: 100%;
+            transition: background .15s;
+        }
+        .btn-primary:not(:disabled):hover { background: #1d4ed8; }
+        .btn-primary:disabled { background: #94a3b8; cursor: not-allowed; }
+
+        .btn-sm {
+            padding: 4px 10px;
+            font-size: 0.75rem;
+            border-radius: 5px;
+            border: none;
+            cursor: pointer;
+            font-weight: 500;
+            white-space: nowrap;
+            transition: background .12s;
+        }
+        .btn-ghost {
+            background: #f1f5f9;
+            color: var(--muted);
+            border: 1px solid var(--border);
+        }
+        .btn-ghost:hover { background: #e2e8f0; color: var(--text); }
+        .btn-outline-blue {
+            background: var(--primary-lt);
+            color: var(--primary);
+            border: 1px solid #bfdbfe;
+        }
+        .btn-outline-blue:hover { background: #dbeafe; }
+
+        /* ── Progress ── */
+        #progress-wrap { display: none; }
+
+        .progress-meta {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.76rem;
+            color: var(--muted);
+            margin-bottom: 4px;
+        }
+
+        .progress-bar { height: 7px; background: #e2e8f0; border-radius: 4px; overflow: hidden; }
+        .progress-fill {
+            height: 100%;
+            background: var(--primary);
+            width: 0%;
+            transition: width .1s linear;
+            border-radius: 4px;
+        }
+
+        /* ── Results ── */
+        .results-split { display: flex; gap: 16px; align-items: flex-start; }
+        .result-col { flex: 1 1 0; min-width: 0; }
+
+        @media (max-width: 880px) { .results-split { flex-direction: column; } }
+
+        .result-heading {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding-top: 10px;
+            margin-bottom: 8px;
+            border-top: 2px solid var(--border);
+        }
+        .result-heading h2 { font-size: 1rem; flex: 1; }
+
+        .summary-box {
+            background: #f0fdf4;
+            border-left: 4px solid var(--success);
+            padding: 8px 12px;
+            margin-bottom: 8px;
+            font-size: 0.82rem;
+            border-radius: 0 5px 5px 0;
+        }
+
+        /* ── Score chart ── */
+        .score-chart {
+            background: white;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 10px 12px;
+            margin-bottom: 8px;
+        }
+
+        .chart-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 5px;
+            font-size: 0.75rem;
+        }
+        .chart-row:last-child { margin-bottom: 0; }
+
+        .chart-label {
+            width: 46px;
+            font-weight: 600;
+            flex-shrink: 0;
+        }
+
+        .chart-track {
+            flex: 1;
+            height: 13px;
+            background: #f1f5f9;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .chart-fill {
+            height: 100%;
+            border-radius: 3px;
+            transition: width .45s ease;
+        }
+
+        .chart-val {
+            width: 38px;
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+            color: var(--muted);
+            flex-shrink: 0;
+        }
+
+        /* ── Table area ── */
+        .table-container {
+            background: white;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+
+        .action-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        .action-bar-right { margin-left: auto; display: flex; gap: 6px; }
+
+        .btn-tool {
+            padding: 4px 9px;
+            font-size: 0.73rem;
+            background: #64748b;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: background .12s;
+        }
+        .btn-tool:hover    { background: #475569; }
+        .btn-tool.success  { background: var(--success); }
+        .btn-tool.success:hover { background: #15803d; }
+        .btn-tool.danger   { background: var(--danger); }
+        .btn-tool.danger:hover  { background: #dc2626; }
+
+        /* ── Split button dropdown ── */
+        .split-btn-group {
+            display: inline-flex;
+            align-items: stretch;
+            border-radius: 4px;
+            overflow: visible;
+            position: relative;
+        }
+        .split-btn-main {
+            padding: 4px 9px;
+            font-size: 0.73rem;
+            background: #64748b;
+            color: white;
+            border: none;
+            border-right: 1px solid rgba(255,255,255,0.25);
+            border-radius: 4px 0 0 4px;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: background .12s;
+            font-weight: 500;
+            font-family: inherit;
+        }
+        .split-btn-main:hover { background: #475569; }
+        .split-btn-chevron {
+            padding: 4px 6px;
+            font-size: 0.73rem;
+            background: #64748b;
+            color: white;
+            border: none;
+            border-radius: 0 4px 4px 0;
+            cursor: pointer;
+            transition: background .12s;
+            display: flex;
+            align-items: center;
+            line-height: 1;
+        }
+        .split-btn-chevron:hover { background: #475569; }
+        .split-btn-chevron svg { display: block; }
+        .split-dropdown {
+            display: none;
+            position: absolute;
+            top: calc(100% + 3px);
+            right: 0;
+            background: white;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            box-shadow: 0 4px 14px rgba(0,0,0,.13);
+            z-index: 200;
+            min-width: 160px;
+            padding: 3px 0;
+        }
+        .split-dropdown.open { display: block; }
+        .split-dropdown button {
+            display: block;
+            width: 100%;
+            text-align: left;
+            padding: 6px 12px;
+            font-size: 0.73rem;
+            font-family: inherit;
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: var(--text);
+            white-space: nowrap;
+            transition: background .1s;
+            font-weight: 500;
+        }
+        .split-dropdown button:hover { background: #f1f5f9; }
+        .split-dropdown .dropdown-divider {
+            height: 1px;
+            background: var(--border);
+            margin: 3px 0;
+        }
+
+        /* ── Toggle switch ── */
+        .toggle-wrap {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.75rem;
+            color: var(--muted);
+            white-space: nowrap;
+        }
+        .toggle-sw {
+            position: relative;
+            display: inline-block;
+            width: 30px;
+            height: 17px;
+            flex-shrink: 0;
+        }
+        .toggle-sw input { opacity: 0; width: 0; height: 0; }
+        .toggle-track {
+            position: absolute;
+            inset: 0;
+            background: #cbd5e1;
+            border-radius: 17px;
+            cursor: pointer;
+            transition: background .2s;
+        }
+        .toggle-track::before {
+            content: '';
+            position: absolute;
+            width: 11px;
+            height: 11px;
+            border-radius: 50%;
+            background: white;
+            top: 3px;
+            left: 3px;
+            transition: transform .2s;
+        }
+        .toggle-sw input:checked + .toggle-track { background: var(--primary); }
+        .toggle-sw input:checked + .toggle-track::before { transform: translateX(13px); }
+
+        .scroll-area { border-radius: 4px; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.81rem; }
+        th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+        th {
+            background: #f8fafc;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            font-size: 0.71rem;
+            text-transform: uppercase;
+            letter-spacing: .03em;
+        }
+        tr.team-hdr td {
+            background: #f8fafc;
+            font-weight: 700;
+            border-bottom: 2px solid var(--border);
+        }
+
+        b.val { color: var(--primary); }
+
+        /* ── Toast ── */
+        #toast-area {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            z-index: 9999;
+            pointer-events: none;
+        }
+        .toast {
+            padding: 9px 14px;
+            border-radius: 8px;
+            font-size: 0.82rem;
+            font-weight: 500;
+            box-shadow: 0 4px 14px rgba(0,0,0,.18);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            max-width: 290px;
+            color: white;
+            animation: toastIn .18s ease;
+            pointer-events: auto;
+        }
+        .toast.success { background: var(--success); }
+        .toast.error   { background: var(--danger); }
+        .toast.info    { background: var(--primary); }
+        .toast.warning { background: #f59e0b; }
+        .toast.out     { opacity: 0; transition: opacity .28s ease; }
+        @keyframes toastIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+    </style>
+</head>
+<body>
+
+<noscript>
+    <div style="max-width:600px;margin:60px auto;padding:20px;text-align:center;font-family:sans-serif;color:#1e293b;">
+        <strong>JavaScript is required.</strong> Team Balancer runs entirely in your browser and needs JavaScript enabled to work.
+    </div>
+</noscript>
+
+<div id="toast-area" role="status" aria-live="polite" aria-atomic="true"></div>
+
+<div class="container">
+
+<header class="app-header">
+    <h1>Team Balancer</h1>
+    <p class="app-tagline">Generate fair, score-balanced teams from a player roster — with optional constraints and previous-team avoidance.</p>
+</header>
+
+<div class="page-layout">
+
+<!-- ══ LEFT: Setup ══ -->
+<div class="setup-area">
+
+    <!-- 1. Player Roster -->
+    <div class="card">
+        <div class="roster-header">
+            <div class="card-title" style="margin-bottom:0">
+                Player Roster&nbsp;<span class="roster-count" id="rosterCount"></span>
+            </div>
+            <div class="roster-actions">
+                <button class="btn-sm btn-ghost" id="sampleBtn">Load Sample</button>
+                <button class="btn-sm btn-ghost" id="dlRosterBtn" title="Download roster as CSV">↓ CSV</button>
+                <button class="btn-sm btn-outline-blue" id="addPlayerBtn">+ Add Row</button>
+            </div>
+        </div>
+
+        <div class="player-table-wrap">
+            <div class="player-scroll">
+                <table class="player-table" id="playerTable">
+                    <thead>
+                        <tr>
+                            <th>Player Name</th>
+                            <th>Prev Team</th>
+                            <th style="width:60px">Score</th>
+                            <th style="width:26px"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="playerBody">
+                        <tr id="emptyPlaceholder">
+                            <td colspan="4" class="roster-empty">No players yet — load a sample or import a CSV.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="import-bar">
+            <div class="drop-zone" id="dropZone" title="Click or drag a CSV file here">
+                ↑ Drop CSV or click to import
+                <input type="file" id="fileInput" accept=".csv" style="display:none">
+            </div>
+        </div>
+    </div>
+
+    <!-- Progress + Generate -->
+    <div id="progress-wrap">
+        <div class="progress-meta">
+            <span>Optimising…</span>
+            <span id="progressLabel" style="font-variant-numeric:tabular-nums;"></span>
+        </div>
+        <div class="progress-bar">
+            <div class="progress-fill" id="progressFill"></div>
+        </div>
+    </div>
+
+    <button class="btn-primary" id="generateBtn" disabled>Generate Teams</button>
+
+    <!-- 2. Configuration -->
+    <div class="card">
+        <div class="card-title">Configuration</div>
+        <div class="field-row">
+            <label class="field-label" for="mode">
+                Mode
+                <span class="tip" data-tip="Per Team: set how many players per team.&#10;Fixed Teams: set the total number of teams.">i</span>
+            </label>
+            <div class="field-ctrl">
+                <select id="mode">
+                    <option value="perTeam">Per Team</option>
+                    <option value="fixedTeams">Fixed Teams</option>
+                </select>
+            </div>
+        </div>
+        <div class="field-row">
+            <label class="field-label" for="modeValue">
+                Count
+                <span class="tip" data-tip="Number of players per team (Per Team mode), or total number of teams (Fixed Teams mode).">i</span>
+            </label>
+            <div class="field-ctrl">
+                <input type="number" id="modeValue" value="5" min="2">
+            </div>
+        </div>
+        <div class="field-row">
+            <label class="field-label" for="percentile">
+                Tier Percentile (%)
+                <span class="tip" data-tip="Top and bottom N% of players (by score) are classified as high/low tier. Used by the High-Low Mixing weight. Max 50%.">i</span>
+            </label>
+            <div class="field-ctrl">
+                <input type="number" id="percentile" value="25" min="1" max="50">
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. Teaming Weights -->
+    <div class="card">
+        <div class="card-title">Teaming Weights
+            <span class="tip" data-tip="Drag each slider to control how strongly the optimizer penalises each objective. 0 = disabled, 10 = maximum.">i</span>
+        </div>
+
+        <div class="weight-row">
+            <label class="weight-label" for="wPrev">
+                Prev teammates
+                <span class="tip" data-tip="Penalises placing players who shared the same previous team together again.">i</span>
+            </label>
+            <div class="slider-group">
+                <input type="range" id="wPrev" min="0" max="10" value="5" oninput="syncSlider(this,'wPrevVal')">
+                <span class="w-val" id="wPrevVal">5</span>
+            </div>
+        </div>
+        <div class="weight-row">
+            <label class="weight-label" for="wMix">
+                High-low mixing
+                <span class="tip" data-tip="Penalises placing a top-tier and bottom-tier player on the same team (see Tier Percentile).">i</span>
+            </label>
+            <div class="slider-group">
+                <input type="range" id="wMix" min="0" max="10" value="5" oninput="syncSlider(this,'wMixVal')">
+                <span class="w-val" id="wMixVal">5</span>
+            </div>
+        </div>
+        <div class="weight-row">
+            <label class="weight-label" for="wScore">
+                Score balance
+                <span class="tip" data-tip="Penalises the gap between the highest and lowest team score totals. Higher weight prioritises closer totals.">i</span>
+            </label>
+            <div class="slider-group">
+                <input type="range" id="wScore" min="0" max="10" value="5" oninput="syncSlider(this,'wScoreVal')">
+                <span class="w-val" id="wScoreVal">5</span>
+            </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="field-row" style="margin-bottom:0">
+            <label class="field-label" for="iterations">
+                Iterations
+                <span class="tip" data-tip="Number of swap attempts per run. Higher = better quality, slower runtime.">i</span>
+            </label>
+            <div class="field-ctrl">
+                <input type="number" id="iterations" value="5000" min="100" step="1000">
+            </div>
+        </div>
+    </div>
+
+    <!-- 4. Constraints -->
+    <div class="card">
+        <div class="constraint-header">
+            <div class="card-title" style="margin-bottom:0">
+                Player Constraints
+                <span class="tip" data-tip="Hard rules applied during optimisation.&#10;Together: players must be on the same team.&#10;Apart: players must be on different teams.">i</span>
+            </div>
+            <button class="btn-sm btn-outline-blue" id="addConstraintBtn">+ Add</button>
+        </div>
+        <div id="constraintList">
+            <div class="constraint-empty" id="constraintEmpty">No constraints — the optimizer is free to do anything.</div>
+        </div>
+    </div>
+
+</div><!-- .setup-area -->
+
+<!-- ══ RIGHT: Results ══ -->
+<div class="results-outer">
+    <div id="resultsArea" style="display:none">
+        <div class="results-split">
+
+            <!-- Latest -->
+            <div class="result-col">
+                <div class="result-heading">
+                    <h2>Latest Generation</h2>
+                </div>
+                <div id="latestSummary" class="summary-box"></div>
+                <div id="latestChart"  class="score-chart"></div>
+                <div class="table-container">
+                    <div class="action-bar">
+                        <div class="toggle-wrap">
+                            <label class="toggle-sw">
+                                <input type="checkbox" id="toggleLatest" onchange="switchView('latest')" aria-label="Toggle per-team view for latest generation">
+                                <span class="toggle-track"></span>
+                            </label>
+                            Per Team
+                        </div>
+                        <div class="action-bar-right">
+                            <div class="split-btn-group" id="splitLatest">
+                                <button class="split-btn-main" onclick="copyTableCSV('latestTable')" title="Copy the visible table as comma-separated values">Copy Table CSV</button>
+                                <button class="split-btn-chevron" onclick="toggleSplitDropdown('splitLatest')" title="More copy options" aria-label="More copy options">
+                                    <svg width="10" height="6" viewBox="0 0 10 6" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M1 1L5 5L9 1" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                                </button>
+                                <div class="split-dropdown" id="dropLatest">
+                                    <button onclick="copyTableTSV('latestTable');closeSplitDropdowns()">Copy Table TSV</button>
+                                    <div class="dropdown-divider"></div>
+                                    <button onclick="copyOutputMarkdown('latest');closeSplitDropdowns()">Copy Markdown</button>
+                                    <button onclick="copyOutput('latest');closeSplitDropdowns()">Copy Formatted</button>
+                                    <button onclick="copyNewTeamColumn('latest');closeSplitDropdowns()">Copy Team Column</button>
+                                </div>
+                            </div>
+                            <button class="btn-tool success" id="btnDlLatest">Download CSV</button>
+                        </div>
+                    </div>
+                    <div class="scroll-area"><table id="latestTable"></table></div>
+                </div>
+            </div>
+
+            <!-- Best Overall -->
+            <div class="result-col">
+                <div class="result-heading">
+                    <h2>Best Overall</h2>
+                    <button class="btn-tool danger" onclick="resetBest()">Reset Best</button>
+                </div>
+                <div id="bestSummary" class="summary-box"></div>
+                <div id="bestChart"  class="score-chart"></div>
+                <div class="table-container">
+                    <div class="action-bar">
+                        <div class="toggle-wrap">
+                            <label class="toggle-sw">
+                                <input type="checkbox" id="toggleBest" onchange="switchView('best')" aria-label="Toggle per-team view for best overall">
+                                <span class="toggle-track"></span>
+                            </label>
+                            Per Team
+                        </div>
+                        <div class="action-bar-right">
+                            <div class="split-btn-group" id="splitBest">
+                                <button class="split-btn-main" onclick="copyTableCSV('bestTable')" title="Copy the visible table as comma-separated values">Copy Table CSV</button>
+                                <button class="split-btn-chevron" onclick="toggleSplitDropdown('splitBest')" title="More copy options" aria-label="More copy options">
+                                    <svg width="10" height="6" viewBox="0 0 10 6" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M1 1L5 5L9 1" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                                </button>
+                                <div class="split-dropdown" id="dropBest">
+                                    <button onclick="copyTableTSV('bestTable');closeSplitDropdowns()">Copy Table TSV</button>
+                                    <div class="dropdown-divider"></div>
+                                    <button onclick="copyOutputMarkdown('best');closeSplitDropdowns()">Copy Markdown</button>
+                                    <button onclick="copyOutput('best');closeSplitDropdowns()">Copy Formatted</button>
+                                    <button onclick="copyNewTeamColumn('best');closeSplitDropdowns()">Copy Team Column</button>
+                                </div>
+                            </div>
+                            <button class="btn-tool success" id="btnDlBest">Download CSV</button>
+                        </div>
+                    </div>
+                    <div class="scroll-area"><table id="bestTable"></table></div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+</div><!-- .page-layout -->
+
+<footer class="app-footer">
+    Team Balancer — runs entirely in your browser; no data is uploaded anywhere. Released under the MIT License.
+</footer>
+
+</div><!-- .container -->
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────
+// State
+// ─────────────────────────────────────────────────────────────────────────
+let playerRows    = [];   // [{name, prevTeam, score}]
+let constraintRules = []; // [{playerA, playerB, type:'together'|'apart'}]
+let allTimeBest   = null;
+let currentWorker = null;
+const lastData    = {};
+
+const TEAM_COLORS = [
+    '#3b82f6','#16a34a','#ea580c','#7c3aed',
+    '#db2777','#0891b2','#dc2626','#ca8a04',
+    '#059669','#9333ea','#0369a1','#b45309'
+];
+
+const $  = id => document.getElementById(id);
+const UI = {
+    dropZone:     $('dropZone'),
+    fileInput:    $('fileInput'),
+    generateBtn:  $('generateBtn'),
+    progressFill: $('progressFill'),
+    progressLabel:$('progressLabel'),
+    resultsArea:  $('resultsArea'),
+    playerBody:   $('playerBody'),
+    rosterCount:  $('rosterCount'),
+    constraintList:$('constraintList'),
+};
+
+// ─────────────────────────────────────────────────────────────────────────
+// Toast notifications
+// ─────────────────────────────────────────────────────────────────────────
+function toast(msg, type = 'info', ms = 2600) {
+    const icons = { success:'✓', error:'✕', info:'ℹ', warning:'⚠' };
+    const el = document.createElement('div');
+    el.className = `toast ${type}`;
+    el.innerHTML = `<span>${icons[type]||'ℹ'}</span><span>${msg}</span>`;
+    $('toast-area').appendChild(el);
+    setTimeout(() => {
+        el.classList.add('out');
+        setTimeout(() => el.remove(), 300);
+    }, ms);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Slider sync — updates the displayed value and CSS gradient
+// ─────────────────────────────────────────────────────────────────────────
+function syncSlider(input, valId) {
+    const v = parseInt(input.value);
+    const el = $(valId);
+    el.textContent = v;
+    el.className = 'w-val' + (v === 0 ? ' off' : '');
+    const pct = v * 10;
+    input.style.background =
+        v === 0
+        ? '#e2e8f0'
+        : `linear-gradient(to right, var(--primary) 0%, var(--primary) ${pct}%, #e2e8f0 ${pct}%, #e2e8f0 100%)`;
+}
+
+document.querySelectorAll('input[type="range"]').forEach(r => {
+    syncSlider(r, r.id + 'Val');
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// CSV parser — properly handles quoted fields with commas and newlines
+// ─────────────────────────────────────────────────────────────────────────
+function parseCSV(raw) {
+    const text = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const rows = [];
+    let row = [], field = '', inQ = false, i = 0;
+
+    while (i < text.length) {
+        const c = text[i];
+        if (c === '"') {
+            if (inQ && text[i + 1] === '"') { field += '"'; i += 2; continue; }
+            inQ = !inQ;
+        } else if (c === ',' && !inQ) {
+            row.push(field.trim()); field = '';
+        } else if (c === '\n' && !inQ) {
+            row.push(field.trim());
+            if (row.some(f => f !== '')) rows.push(row);
+            row = []; field = '';
+        } else {
+            field += c;
+        }
+        i++;
+    }
+    if (field !== '' || row.length) {
+        row.push(field.trim());
+        if (row.some(f => f !== '')) rows.push(row);
+    }
+    return rows;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Player table — inline editable CRUD
+// ─────────────────────────────────────────────────────────────────────────
+function syncRosterMeta() {
+    const n = playerRows.length;
+    UI.rosterCount.textContent = n > 0 ? `(${n})` : '';
+    UI.generateBtn.disabled = n < 2;
+    if (constraintRules.length > 0) rebuildConstraintList();
+}
+
+function makeInput(val, placeholder, type) {
+    const inp = document.createElement('input');
+    inp.type = type || 'text';
+    inp.className = 'p-inp' + (type === 'number' ? ' score-inp' : '');
+    inp.value = val ?? '';
+    inp.placeholder = placeholder;
+    if (type === 'number') { inp.step = '0.01'; inp.min = '0'; }
+    return inp;
+}
+
+function buildPlayerRow(idx) {
+    const p  = playerRows[idx];
+    const tr = document.createElement('tr');
+
+    const nameInp  = makeInput(p.name, 'Player name');
+    const teamInp  = makeInput(p.prevTeam, 'e.g. Red');
+    const scoreInp = makeInput(p.score === 0 ? '' : p.score, '0', 'number');
+
+    nameInp.oninput  = () => { playerRows[idx].name = nameInp.value.trim(); };
+    nameInp.onblur   = () => syncRosterMeta();  // refresh constraints on blur
+    teamInp.oninput  = () => { playerRows[idx].prevTeam = teamInp.value.trim(); };
+    scoreInp.oninput = () => { playerRows[idx].score = parseFloat(scoreInp.value) || 0; };
+
+    // Tab from score → next row name
+    scoreInp.onkeydown = (e) => {
+        if (e.key === 'Tab' && !e.shiftKey && idx === playerRows.length - 1) {
+            e.preventDefault();
+            addPlayerRow();
+        }
+    };
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'row-del';
+    delBtn.innerHTML = '&times;';
+    delBtn.title = 'Remove';
+    delBtn.setAttribute('aria-label', 'Remove player');
+    delBtn.onclick = () => { playerRows.splice(idx, 1); rebuildPlayerTable(); };
+
+    const mkTd = (child, cls) => {
+        const td = document.createElement('td');
+        if (cls) td.className = cls;
+        td.appendChild(child);
+        return td;
+    };
+
+    tr.append(mkTd(nameInp), mkTd(teamInp), mkTd(scoreInp), mkTd(delBtn, 'del-col'));
+    return tr;
+}
+
+function rebuildPlayerTable() {
+    UI.playerBody.innerHTML = '';
+    if (playerRows.length === 0) {
+        UI.playerBody.innerHTML =
+            '<tr id="emptyPlaceholder"><td colspan="4" class="roster-empty">No players yet — load a sample or import a CSV.</td></tr>';
+    } else {
+        playerRows.forEach((_, i) => UI.playerBody.appendChild(buildPlayerRow(i)));
+    }
+    syncRosterMeta();
+}
+
+function addPlayerRow(p) {
+    const row = p || { name: '', prevTeam: '', score: 0 };
+    playerRows.push(row);
+    const placeholder = $('emptyPlaceholder');
+    if (placeholder) placeholder.remove();
+    const idx = playerRows.length - 1;
+    UI.playerBody.appendChild(buildPlayerRow(idx));
+    syncRosterMeta();
+    if (!p) {
+        // Focus the new name cell
+        const lastRow = UI.playerBody.lastElementChild;
+        const firstInput = lastRow && lastRow.querySelector('.p-inp');
+        if (firstInput) firstInput.focus();
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// CSV import
+// ─────────────────────────────────────────────────────────────────────────
+function handleFile(file) {
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.csv')) {
+        toast('Please select a .csv file.', 'error'); return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        const rows = parseCSV(e.target.result);
+        if (rows.length < 2) { toast('CSV appears empty or has no data rows.', 'error'); return; }
+
+        const headers = rows[0].map(h => h.toLowerCase());
+        const nIdx    = headers.indexOf('player name');
+        const tIdx    = headers.indexOf('previous team');
+        const sIdx    = headers.indexOf('score');
+
+        if (nIdx === -1 || sIdx === -1) {
+            toast('CSV must have "player name" and "score" columns.', 'error'); return;
+        }
+
+        const imported = rows.slice(1).map(cols => ({
+            name:     (cols[nIdx] || '').trim(),
+            prevTeam: tIdx >= 0 ? (cols[tIdx] || '').trim() : '',
+            score:    parseFloat(cols[sIdx]) || 0
+        })).filter(p => p.name !== '');
+
+        if (!imported.length) { toast('No valid player rows found in CSV.', 'error'); return; }
+
+        playerRows    = imported;
+        allTimeBest   = null;
+        lastData.latest = null;
+        lastData.best   = null;
+        constraintRules = [];
+        rebuildConstraintList();
+        rebuildPlayerTable();
+        toast(`Loaded ${imported.length} players from ${file.name}`, 'success');
+        UI.fileInput.value = '';
+    };
+    reader.onerror = () => toast('Could not read file.', 'error');
+    reader.readAsText(file);
+}
+
+// Load sample directly into editor
+$('sampleBtn').onclick = () => {
+    const names = [
+        'Alice Johnson','Bob Smith','Carol White','David Brown','Eva Martinez',
+        'Frank Lee','Grace Kim','Henry Davis','Irene Wilson','Jack Taylor',
+        'Karen Moore','Liam Anderson','Mia Thomas','Noah Jackson','Olivia Harris',
+        'Paul Clark','Quinn Lewis','Rachel Walker','Sam Hall','Tina Young'
+    ];
+    const teams = ['Red','Blue','Green','Yellow'];
+    playerRows = names.map((name, i) => ({
+        name,
+        prevTeam: teams[i % teams.length],
+        score: parseFloat((Math.random() * 8 + 1).toFixed(2))
+    }));
+    allTimeBest = null; lastData.latest = null; lastData.best = null;
+    constraintRules = [];
+    rebuildConstraintList();
+    rebuildPlayerTable();
+    toast('Sample roster loaded — hit Generate Teams!', 'success');
+};
+
+$('addPlayerBtn').onclick = () => addPlayerRow();
+
+UI.dropZone.onclick    = () => UI.fileInput.click();
+UI.dropZone.ondragover = e => { e.preventDefault(); UI.dropZone.classList.add('dragover'); };
+UI.dropZone.ondragleave= () => UI.dropZone.classList.remove('dragover');
+UI.dropZone.ondrop     = e => { e.preventDefault(); UI.dropZone.classList.remove('dragover'); handleFile(e.dataTransfer.files[0]); };
+UI.fileInput.onchange  = e => handleFile(e.target.files[0]);
+
+// ─────────────────────────────────────────────────────────────────────────
+// Constraints
+// ─────────────────────────────────────────────────────────────────────────
+function getPlayerNames() {
+    return playerRows.map(p => p.name).filter(Boolean);
+}
+
+function makeNameSelect(chosen) {
+    const names = getPlayerNames();
+    const sel = document.createElement('select');
+    names.forEach(n => {
+        const opt = document.createElement('option');
+        opt.value = n; opt.textContent = n;
+        if (n === chosen) opt.selected = true;
+        sel.appendChild(opt);
+    });
+    return sel;
+}
+
+function buildConstraintRow(idx, rule) {
+    const div = document.createElement('div');
+    div.className = 'constraint-row';
+
+    const selA = makeNameSelect(rule.playerA);
+    selA.onchange = () => { constraintRules[idx].playerA = selA.value; };
+
+    const typeSel = document.createElement('select');
+    typeSel.className = 'type-sel';
+    [['together','🤝 Together'],['apart','⚔ Apart']].forEach(([v, l]) => {
+        const opt = document.createElement('option');
+        opt.value = v; opt.textContent = l;
+        if (v === rule.type) opt.selected = true;
+        typeSel.appendChild(opt);
+    });
+    typeSel.onchange = () => { constraintRules[idx].type = typeSel.value; };
+
+    const selB = makeNameSelect(rule.playerB);
+    selB.onchange = () => { constraintRules[idx].playerB = selB.value; };
+
+    const del = document.createElement('button');
+    del.className = 'row-del';
+    del.innerHTML = '&times;';
+    del.title = 'Remove constraint';
+    del.setAttribute('aria-label', 'Remove constraint');
+    del.onclick = () => { constraintRules.splice(idx, 1); rebuildConstraintList(); };
+
+    div.append(selA, typeSel, selB, del);
+    return div;
+}
+
+function rebuildConstraintList() {
+    UI.constraintList.innerHTML = '';
+    if (constraintRules.length === 0) {
+        UI.constraintList.innerHTML =
+            '<div class="constraint-empty" id="constraintEmpty">No constraints — the optimizer is free to do anything.</div>';
+        return;
+    }
+    constraintRules.forEach((r, i) => UI.constraintList.appendChild(buildConstraintRow(i, r)));
+}
+
+$('addConstraintBtn').onclick = () => {
+    const names = getPlayerNames();
+    if (names.length < 2) { toast('Add at least 2 named players first.', 'warning'); return; }
+    const a = names[0], b = names.length > 1 ? names[1] : names[0];
+    constraintRules.push({ playerA: a, playerB: b, type: 'apart' });
+    rebuildConstraintList();
+};
+
+// ─────────────────────────────────────────────────────────────────────────
+// Validation
+// ─────────────────────────────────────────────────────────────────────────
+function validate(players, numTeams) {
+    if (players.length < 2) {
+        toast('Add at least 2 players before generating.', 'error'); return false;
+    }
+    if (numTeams < 2) {
+        toast(`Only ${numTeams} team would form. Lower the count or switch modes.`, 'error'); return false;
+    }
+    if (numTeams >= players.length) {
+        toast(`${numTeams} teams for ${players.length} players would leave teams empty. Increase the player count or reduce teams.`, 'error'); return false;
+    }
+    const seen = new Set(), dupes = new Set();
+    players.forEach(p => seen.has(p.name) ? dupes.add(p.name) : seen.add(p.name));
+    if (dupes.size > 0) {
+        toast(`Duplicate name(s): ${[...dupes].join(', ')}. Results may be incorrect.`, 'warning');
+    }
+    return true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Worker source (simulated annealing — runs off main thread)
+// ─────────────────────────────────────────────────────────────────────────
+const WORKER_SRC = `
+self.onmessage = function(e) {
+    const { players, numTeams, settings, iterations, constraints } = e.data;
+
+    const sorted  = [...players].sort((a, b) => b.score - a.score);
+    const cutoff  = Math.floor(players.length * settings.pct / 100);
+    const hiTier  = new Set(sorted.slice(0, cutoff).map(p => p.name));
+    const loTier  = new Set(sorted.slice(-cutoff).map(p => p.name));
+
+    function calcCost(teams) {
+        let v = 0;
+        const tScores = teams.map(t => t.reduce((s, p) => s + p.score, 0));
+        const sizes   = teams.map(t => t.length);
+
+        // Hard: size imbalance
+        if (Math.max(...sizes) - Math.min(...sizes) > 1) v += 1000000;
+
+        // Hard: player constraints
+        const nameTeam = {};
+        teams.forEach((t, ti) => t.forEach(p => nameTeam[p.name] = ti));
+        for (const c of constraints) {
+            const a = nameTeam[c.playerA], b = nameTeam[c.playerB];
+            if (a === undefined || b === undefined) continue;
+            if (c.type === 'together' && a !== b) v += 500000;
+            if (c.type === 'apart'    && a === b) v += 500000;
+        }
+
+        // Soft: weighted objectives
+        for (const team of teams) {
+            for (let i = 0; i < team.length; i++) {
+                for (let j = i + 1; j < team.length; j++) {
+                    const a = team[i], b = team[j];
+                    if (settings.wPrev > 0 && a.prevTeam && a.prevTeam === b.prevTeam)
+                        v += settings.wPrev * 200;
+                    if (settings.wMix > 0 &&
+                        ((hiTier.has(a.name) && loTier.has(b.name)) ||
+                         (loTier.has(a.name) && hiTier.has(b.name))))
+                        v += settings.wMix * 200;
+                }
+            }
+        }
+        if (settings.wScore > 0)
+            v += settings.wScore * 10 * (Math.max(...tScores) - Math.min(...tScores));
+
+        return { v, tScores };
+    }
+
+    // Snake-draft seed (much better starting point than random)
+    let cur = Array.from({ length: numTeams }, () => []);
+    sorted.forEach((p, i) => {
+        const round = Math.floor(i / numTeams);
+        const pos   = round % 2 === 0 ? i % numTeams : numTeams - 1 - (i % numTeams);
+        cur[pos].push(p);
+    });
+
+    let curR = calcCost(cur);
+    let best = cur.map(t => [...t]);
+    let bestR = { v: curR.v, tScores: [...curR.tScores] };
+
+    // Simulated annealing
+    const T0     = 500;
+    const Tend   = 0.1;
+    const cool   = Math.pow(Tend / T0, 1 / Math.max(iterations - 1, 1));
+    let T = T0;
+    const REPORT = Math.max(1, Math.floor(iterations / 200));
+
+    for (let i = 0; i < iterations; i++) {
+        const t1 = Math.floor(Math.random() * numTeams);
+        const t2 = (t1 + 1 + Math.floor(Math.random() * (numTeams - 1))) % numTeams;
+
+        if (cur[t1].length && cur[t2].length) {
+            const i1 = Math.floor(Math.random() * cur[t1].length);
+            const i2 = Math.floor(Math.random() * cur[t2].length);
+
+            const tmp = cur[t1][i1]; cur[t1][i1] = cur[t2][i2]; cur[t2][i2] = tmp;
+            const nR  = calcCost(cur);
+            const d   = nR.v - curR.v;
+
+            if (d <= 0 || Math.random() < Math.exp(-d / T)) {
+                curR = nR;
+                if (curR.v < bestR.v) {
+                    best  = cur.map(t => [...t]);
+                    bestR = { v: curR.v, tScores: [...curR.tScores] };
+                }
+            } else {
+                cur[t2][i2] = cur[t1][i1]; cur[t1][i1] = tmp;
+            }
+        }
+
+        T *= cool;
+        if (i % REPORT === 0)
+            self.postMessage({ type: 'progress', pct: i / iterations * 100, bestV: bestR.v });
+    }
+
+    self.postMessage({
+        type:   'done',
+        latest: { teams: cur,  scores: curR.tScores,  quality: curR.v  },
+        best:   { teams: best, scores: bestR.tScores, quality: bestR.v }
+    });
+};
+`;
+
+// ─────────────────────────────────────────────────────────────────────────
+// Run balancer
+// ─────────────────────────────────────────────────────────────────────────
+$('generateBtn').onclick = runBalancer;
+
+function runBalancer() {
+    if (currentWorker) { currentWorker.terminate(); currentWorker = null; }
+
+    const iterations = parseInt($('iterations').value) || 5000;
+    const mode       = $('mode').value;
+    const modeVal    = parseInt($('modeValue').value) || 5;
+    const players    = playerRows.map(r => ({
+        name:     r.name,
+        prevTeam: r.prevTeam,
+        score:    parseFloat(r.score) || 0
+    })).filter(p => p.name !== '');
+
+    const numTeams = mode === 'fixedTeams'
+        ? modeVal
+        : Math.ceil(players.length / modeVal);
+
+    if (!validate(players, numTeams)) return;
+
+    const settings = {
+        wPrev:  parseInt($('wPrev').value),
+        wMix:   parseInt($('wMix').value),
+        wScore: parseInt($('wScore').value),
+        pct:    parseInt($('percentile').value) || 25
+    };
+
+    $('progress-wrap').style.display = 'block';
+    UI.progressFill.style.width      = '0%';
+    UI.progressLabel.textContent     = '';
+    UI.resultsArea.style.display     = 'none';
+    UI.generateBtn.disabled          = true;
+    UI.generateBtn.textContent       = 'Optimising…';
+
+    const blob = new Blob([WORKER_SRC], { type: 'application/javascript' });
+    const url  = URL.createObjectURL(blob);
+    currentWorker = new Worker(url);
+    URL.revokeObjectURL(url);
+
+    currentWorker.onmessage = e => {
+        const msg = e.data;
+        if (msg.type === 'progress') {
+            UI.progressFill.style.width = `${msg.pct.toFixed(1)}%`;
+            const v = msg.bestV;
+            UI.progressLabel.textContent =
+                v >= 1000000 ? 'Fixing size imbalance…'
+              : v >= 500000  ? 'Resolving constraints…'
+              : v >= 1       ? `Quality: ${v.toFixed(0)}`
+              : 'Near-optimal';
+        } else if (msg.type === 'done') {
+            if (!allTimeBest || msg.best.quality < allTimeBest.quality)
+                allTimeBest = JSON.parse(JSON.stringify(msg.best));
+            renderResults(msg.latest, allTimeBest);
+            $('progress-wrap').style.display = 'none';
+            UI.resultsArea.style.display     = 'block';
+            UI.generateBtn.disabled          = false;
+            UI.generateBtn.textContent       = 'Generate Teams';
+            currentWorker = null;
+        }
+    };
+
+    currentWorker.onerror = err => {
+        console.error('Worker error:', err);
+        $('progress-wrap').style.display = 'none';
+        UI.generateBtn.disabled          = false;
+        UI.generateBtn.textContent       = 'Generate Teams';
+        toast('Optimisation failed — see console for details.', 'error');
+        currentWorker = null;
+    };
+
+    currentWorker.postMessage({ players, numTeams, settings, iterations, constraints: constraintRules });
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Rendering
+// ─────────────────────────────────────────────────────────────────────────
+function renderResults(latest, best) {
+    renderGroup('latest', latest);
+    renderGroup('best',   best);
+}
+
+function resetBest() {
+    if (!lastData.latest) return;
+    allTimeBest = JSON.parse(JSON.stringify(lastData.latest));
+    renderGroup('best', allTimeBest);
+    toast('Best reset to the latest run.', 'info');
+}
+
+function renderGroup(pfx, data) {
+    lastData[pfx] = data;
+
+    const max = Math.max(...data.scores);
+    const min = Math.min(...data.scores);
+    const avg = data.scores.reduce((a, b) => a + b, 0) / data.scores.length;
+    const imb = max - min;
+
+    $(pfx + 'Summary').innerHTML =
+        `<strong>Balance Summary:</strong> ` +
+        `Highest: <b class="val">${max.toFixed(2)}</b> | ` +
+        `Lowest: <b class="val">${min.toFixed(2)}</b> | ` +
+        `Avg: <b class="val">${avg.toFixed(2)}</b> | ` +
+        `Imbalance: <b class="val">${imb.toFixed(2)}</b> (${((imb / avg) * 100).toFixed(1)}%)`;
+
+    renderScoreChart(pfx + 'Chart', data);
+
+    const nameToTeam = {};
+    data.teams.forEach((t, ti) => t.forEach(p => nameToTeam[p.name] = ti + 1));
+
+    const isPerTeam = $('toggle' + cap(pfx)).checked;
+    renderTable(pfx, data, nameToTeam, isPerTeam);
+
+    $(pfx === 'latest' ? 'btnDlLatest' : 'btnDlBest').onclick = () => exportCSV(pfx, data, nameToTeam);
+}
+
+function renderScoreChart(id, data) {
+    const maxS = Math.max(...data.scores);
+    $(id).innerHTML = data.scores.map((s, i) => {
+        const color = TEAM_COLORS[i % TEAM_COLORS.length];
+        const pct   = maxS > 0 ? (s / maxS * 100).toFixed(1) : 100;
+        return `<div class="chart-row">
+            <div class="chart-label" style="color:${color}">Team ${i + 1}</div>
+            <div class="chart-track">
+                <div class="chart-fill" style="width:${pct}%;background:${color}"></div>
+            </div>
+            <div class="chart-val">${s.toFixed(2)}</div>
+        </div>`;
+    }).join('');
+}
+
+function renderTable(pfx, data, nameToTeam, isPerTeam) {
+    $(pfx + 'Table').innerHTML = isPerTeam
+        ? buildPerTeamHTML(data)
+        : buildFlatHTML(data, nameToTeam);
+}
+
+function buildFlatHTML(data, nameToTeam) {
+    let html = '<tr><th>Player Name</th><th>Prev Team</th><th>Score</th><th>New Team</th></tr>';
+    // Preserve the order defined in the player roster table (Per Team view handles grouping)
+    playerRows.forEach(r => {
+        const t = nameToTeam[r.name];
+        const c = t ? TEAM_COLORS[(t - 1) % TEAM_COLORS.length] : '#94a3b8';
+        const badge = `<span style="display:inline-block;min-width:24px;padding:2px 8px;
+            border-radius:12px;font-weight:700;font-size:0.74rem;
+            background:${c};color:#fff;text-align:center">${t ?? '?'}</span>`;
+        html += `<tr><td>${r.name}</td><td>${r.prevTeam || '—'}</td>` +
+                `<td>${(parseFloat(r.score) || 0).toFixed(2)}</td><td>${badge}</td></tr>`;
+    });
+    return html;
+}
+
+function buildPerTeamHTML(data) {
+    const maxS = Math.max(...data.scores);
+    let html = '<tr><th>Player Name</th><th>Prev Team</th><th>Score</th></tr>';
+    data.teams.forEach((team, i) => {
+        const c   = TEAM_COLORS[i % TEAM_COLORS.length];
+        const pct = maxS > 0 ? (data.scores[i] / maxS * 100).toFixed(1) : 100;
+        const bar = `<div style="flex:1;max-width:90px;height:5px;background:#e2e8f0;border-radius:3px;margin:0 8px">
+            <div style="width:${pct}%;height:100%;background:${c};border-radius:3px"></div></div>`;
+        html += `<tr class="team-hdr"><td colspan="3"
+            style="color:${c};border-left:3px solid ${c};padding-left:10px">
+            <div style="display:flex;align-items:center">
+                <span>Team ${i + 1}</span>${bar}
+                <span style="font-weight:400;font-size:0.78rem;color:#64748b;white-space:nowrap">
+                    Total: ${data.scores[i].toFixed(2)}
+                </span>
+            </div></td></tr>`;
+        [...team].sort((a, b) => b.score - a.score).forEach(p =>
+            html += `<tr><td>${p.name}</td><td>${p.prevTeam || '—'}</td><td>${p.score.toFixed(2)}</td></tr>`
+        );
+    });
+    return html;
+}
+
+function switchView(pfx) {
+    if (!lastData[pfx]) return;
+    const data = lastData[pfx];
+    const nameToTeam = {};
+    data.teams.forEach((t, ti) => t.forEach(p => nameToTeam[p.name] = ti + 1));
+    renderTable(pfx, data, nameToTeam, $('toggle' + cap(pfx)).checked);
+}
+
+function exportCSV(pfx, data, nameToTeam) {
+    let csv = 'player name,previous team,score,new team\n';
+    playerRows.forEach(r => {
+        const t = nameToTeam[r.name] ?? '';
+        csv += `"${r.name}","${r.prevTeam || ''}",${(parseFloat(r.score) || 0).toFixed(2)},${t}\n`;
+    });
+    const a = Object.assign(document.createElement('a'), {
+        href: URL.createObjectURL(new Blob([csv], { type: 'text/csv' })),
+        download: `teams_${pfx}.csv`
+    });
+    a.click();
+    URL.revokeObjectURL(a.href);
+    toast('CSV exported!', 'success');
+}
+
+function buildOutputText(data, label) {
+    const SEP = '='.repeat(44);
+    const div = '-'.repeat(44);
+    let out = `${SEP}\nTEAM RESULTS — ${label.toUpperCase()}\n${SEP}\n\n`;
+    data.teams.forEach((team, i) => {
+        out += `TEAM ${i + 1}   (Total: ${data.scores[i].toFixed(2)})\n${div}\n`;
+        [...team].sort((a, b) => b.score - a.score).forEach(p =>
+            out += `  ${p.name.padEnd(26)}${p.score.toFixed(2).padStart(6)}\n`
+        );
+        out += '\n';
+    });
+    return out;
+}
+
+function copyOutput(pfx) {
+    if (!lastData[pfx]) return;
+    const label = pfx === 'latest' ? 'Latest Generation' : 'Best Overall';
+    navigator.clipboard.writeText(buildOutputText(lastData[pfx], label))
+        .then(() => toast('Formatted output copied!', 'success'))
+        .catch(() => toast('Copy failed — check browser permissions.', 'error'));
+}
+
+function buildOutputMarkdown(data) {
+    let out = '';
+    data.teams.forEach((team, i) => {
+        out += `**Team ${i + 1}**\n`;
+        [...team].sort((a, b) => b.score - a.score).forEach(p =>
+            out += `- ${p.name}\n`
+        );
+        out += '\n';
+    });
+    return out.trimEnd();
+}
+
+function copyOutputMarkdown(pfx) {
+    if (!lastData[pfx]) return;
+    navigator.clipboard.writeText(buildOutputMarkdown(lastData[pfx]))
+        .then(() => toast('Markdown list copied!', 'success'))
+        .catch(() => toast('Copy failed — check browser permissions.', 'error'));
+}
+
+function copyNewTeamColumn(pfx) {
+    if (!lastData[pfx]) return;
+    const data = lastData[pfx];
+    const nameToTeam = {};
+    data.teams.forEach((t, ti) => t.forEach(p => nameToTeam[p.name] = ti + 1));
+    // Follow the original roster input order
+    const col = playerRows.map(r => nameToTeam[r.name] ?? '').join('\n');
+    navigator.clipboard.writeText(col)
+        .then(() => toast('Team column copied (roster order)!', 'success'))
+        .catch(() => toast('Copy failed — check browser permissions.', 'error'));
+}
+
+function copyTableCSV(id) {
+    const rows = [...$(id).querySelectorAll('tr')];
+    const text = rows.map(r =>
+        [...r.querySelectorAll('th,td')].map(c => c.innerText.replace(/\n/g, ' ')).join(',')
+    ).join('\n');
+    navigator.clipboard.writeText(text)
+        .then(() => toast('CSV copied to clipboard!', 'success'))
+        .catch(() => toast('Copy failed — check browser permissions.', 'error'));
+}
+
+function copyTableTSV(id) {
+    const rows = [...$(id).querySelectorAll('tr')];
+    const text = rows.map(r =>
+        [...r.querySelectorAll('th,td')].map(c => c.innerText.replace(/\n/g, ' ').replace(/\t/g, ' ')).join('\t')
+    ).join('\n');
+    navigator.clipboard.writeText(text)
+        .then(() => toast('TSV copied — ready to paste into a spreadsheet!', 'success'))
+        .catch(() => toast('Copy failed — check browser permissions.', 'error'));
+}
+
+function toggleSplitDropdown(groupId) {
+    const drop = document.getElementById(groupId).querySelector('.split-dropdown');
+    const isOpen = drop.classList.contains('open');
+    closeSplitDropdowns();
+    if (!isOpen) drop.classList.add('open');
+}
+
+function closeSplitDropdowns() {
+    document.querySelectorAll('.split-dropdown.open').forEach(d => d.classList.remove('open'));
+}
+
+document.addEventListener('click', e => {
+    if (!e.target.closest('.split-btn-group')) closeSplitDropdowns();
+});
+
+function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+// ── Download player roster as CSV ─────────────────────────────────────────
+$('dlRosterBtn').onclick = () => {
+    if (!playerRows.length) { toast('No players in the roster yet.', 'warning'); return; }
+    let csv = 'player name,previous team,score\n';
+    playerRows.forEach(r => {
+        csv += `"${r.name}","${r.prevTeam || ''}",${(parseFloat(r.score) || 0).toFixed(2)}\n`;
+    });
+    const a = Object.assign(document.createElement('a'), {
+        href: URL.createObjectURL(new Blob([csv], { type: 'text/csv' })),
+        download: 'player_roster.csv'
+    });
+    a.click();
+    URL.revokeObjectURL(a.href);
+    toast('Roster downloaded!', 'success');
+};
+
+// ── JS tooltip system — uses position:fixed so overflow:auto never clips it ──
+const tipBox = document.createElement('div');
+tipBox.id = 'tip-box';
+document.body.appendChild(tipBox);
+
+document.addEventListener('mouseover', e => {
+    const el = e.target.closest('.tip[data-tip]');
+    if (!el) return;
+    tipBox.textContent = el.dataset.tip;
+    tipBox.style.display = 'block';
+    // Measure after making visible (display:block) but before painting
+    const r  = el.getBoundingClientRect();
+    const bw = tipBox.offsetWidth;
+    const bh = tipBox.offsetHeight;
+    let left = r.left + r.width / 2 - bw / 2;
+    let top  = r.top - bh - 8;
+    // Keep within viewport
+    left = Math.max(8, Math.min(left, window.innerWidth  - bw - 8));
+    top  = top < 8 ? r.bottom + 8 : top;   // flip below if too close to top
+    tipBox.style.left = left + 'px';
+    tipBox.style.top  = top  + 'px';
+});
+
+document.addEventListener('mouseout', e => {
+    if (e.target.closest('.tip')) tipBox.style.display = 'none';
+});
+</script>
+
+</body>
+</html>
