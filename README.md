@@ -5,7 +5,7 @@
 
 A browser-based tool for splitting a group of people into balanced teams based on skill, prior groupings, and custom constraints.
 
-**[🚀 Live demo](https://djsapit.github.io/team-balancer/)** · [How it works](#how-it-works) · [Getting started](#getting-started) · [Settings reference](#settings-reference)
+**[🚀 Live demo](https://djsapit.github.io/team-balancer/)** · [How it works](#how-it-works) · [Settings reference](#settings-reference)
 
 ---
 
@@ -39,15 +39,6 @@ The assignment process begins with an initial arrangement rather than a random o
 From there, the tool refines the arrangement iteratively. On each step, it considers swapping two players between teams and evaluates whether the change improves overall balance — accounting for skill totals, repeat pairings, and any defined constraints. Improving swaps are generally kept, but the process occasionally accepts a swap that appears slightly worse, which helps avoid settling on a suboptimal arrangement early in the search. Over the course of the run, this willingness to accept worse moves decreases, and the search becomes increasingly selective. This approach, known as simulated annealing, is a standard method for problems with a large number of possible configurations.
 
 All of this computation takes place on a separate background thread, so the page does not become unresponsive during longer searches.
-
-## Getting Started
-
-The application requires no installation or setup.
-
-1. Save the `team-balancer.html` file.
-2. Open it in a browser, either by double-clicking the file or using File → Open.
-
-The file can also be hosted as a static page (for example, via GitHub Pages) if a shareable link is preferred over a local file.
 
 ## Usage
 
